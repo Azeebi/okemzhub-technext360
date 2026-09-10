@@ -23,6 +23,20 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupLoginForm() {
+  const toggle = document.getElementById('toggle-password');
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      const input = document.getElementById('login-password');
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      toggle.querySelector('.eye-open').style.display = show ? 'none' : '';
+      toggle.querySelector('.eye-closed').style.display = show ? '' : 'none';
+      const label = show ? 'Hide password' : 'Show password';
+      toggle.setAttribute('aria-label', label);
+      toggle.setAttribute('title', label);
+    });
+  }
+
   document.getElementById('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const errEl = document.getElementById('login-error');

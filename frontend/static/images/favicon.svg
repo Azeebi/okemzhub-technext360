@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <!-- Blended palette: OKEMZ cyan/blue → TechNext electric indigo -->
+    <linearGradient id="blend" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#06d8f6"/>
+      <stop offset="40%"  stop-color="#0898d8"/>
+      <stop offset="72%"  stop-color="#1a1aff"/>
+      <stop offset="100%" stop-color="#4d6bff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded badge with the blended brand gradient -->
+  <rect x="6" y="6" width="188" height="188" rx="46" fill="url(#blend)"/>
+
+  <!-- OKEMZ HUB: white infinity / S-curve (the "hub") -->
+  <path d="M 60 112 C 60 90, 75 76, 92 76 C 108 76, 122 90, 122 104 C 122 113, 115 118, 99 120"
+        fill="none" stroke="#ffffff" stroke-width="11" stroke-linecap="round" opacity="0.9"/>
+  <path d="M 122 96 C 122 118, 107 132, 90 132 C 74 132, 60 118, 60 104 C 60 95, 67 90, 83 88"
+        fill="none" stroke="#ffffff" stroke-width="11" stroke-linecap="round" opacity="0.9"/>
+
+  <!-- TechNext360: rising growth arrow + accent dot -->
+  <circle cx="150" cy="52" r="9" fill="#ffffff"/>
+  <path d="M112 150 L138 108 L156 132 L184 82"
+        fill="none" stroke="#ffffff" stroke-width="14"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M166 78 L192 70 L186 98 Z" fill="#ffffff"/>
+</svg>

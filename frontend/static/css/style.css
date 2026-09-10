@@ -26,6 +26,7 @@
   --border:   #d0e5f0;
   --text:     #0a1929;
   --muted:    #5a7a96;
+  --heading:  var(--navy);
 
   --radius:     10px;
   --shadow:     0 1px 3px rgba(4,20,46,.07), 0 4px 12px rgba(4,20,46,.05);
@@ -39,7 +40,7 @@
   --border:   #1d3a55;
   --text:     #d8ecf7;
   --muted:    #6b9ab8;
-  --navy:     #c8dff0;
+  --heading:  #eaf4fb;
   --success-bg:   #064e3b;
   --success-text: #6ee7b7;
   --warning-bg:   #451a03;
@@ -97,12 +98,12 @@
 [data-brand="technext360"] #login-screen::before,
 [data-brand="technext360"] #login-screen::after { background: #4d6bff; }
 [data-brand="technext360"][data-theme="dark"] {
-  --navy:  #c8ccf5;
   --bg-main: #070814;
   --surface: #10122a;
   --border:  #23264d;
   --text:    #dfe2ff;
   --muted:   #8b90c8;
+  --heading: #eef0ff;
 }
 [data-brand="technext360"][data-theme="dark"] #sidebar { background: #05060f; }
 
@@ -175,7 +176,7 @@ a { color: inherit; text-decoration: none; }
 .login-title {
   font-size: 1.25rem;
   font-weight: 800;
-  color: var(--navy);
+  color: var(--heading);
   letter-spacing: .01em;
   margin-bottom: .25rem;
   line-height: 1.35;
@@ -188,7 +189,7 @@ a { color: inherit; text-decoration: none; }
 .login-card h1 {
   font-size: 1.6rem;
   font-weight: 800;
-  color: var(--navy);
+  color: var(--heading);
   letter-spacing: .02em;
   margin-bottom: .25rem;
 }
@@ -199,6 +200,24 @@ a { color: inherit; text-decoration: none; }
   margin-bottom: 2rem;
 }
 .login-card form { text-align: left; }
+.password-field { position: relative; display: flex; align-items: center; }
+.password-field input { flex: 1; padding-right: 2.75rem; }
+.password-toggle {
+  position: absolute;
+  right: .5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: .3rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted, #888);
+  border-radius: 5px;
+}
+.password-toggle:hover { color: var(--blue, #4d6bff); }
 #login-error {
   background: var(--danger-bg);
   color: var(--danger-text);
@@ -333,7 +352,7 @@ a { color: inherit; text-decoration: none; }
   justify-content: space-between;
   margin-bottom: 1.75rem;
 }
-.page-header h1 { font-size: 1.45rem; font-weight: 700; color: var(--navy); }
+.page-header h1 { font-size: 1.45rem; font-weight: 700; color: var(--heading); }
 .page-sub { font-size: .85rem; color: var(--muted); }
 
 /* ─── STATS GRID ──────────────────────────────────────────────────────────── */
@@ -377,7 +396,7 @@ a { color: inherit; text-decoration: none; }
   color: var(--muted);
   margin-bottom: .3rem;
 }
-.stat-value { font-size: 1.75rem; font-weight: 700; color: var(--navy); line-height: 1.1; }
+.stat-value { font-size: 1.75rem; font-weight: 700; color: var(--heading); line-height: 1.1; }
 .stat-sub   { font-size: .75rem; color: var(--muted); margin-top: .2rem; }
 
 /* ─── CARD ────────────────────────────────────────────────────────────────── */
@@ -582,7 +601,7 @@ textarea { resize: vertical; min-height: 90px; }
   justify-content: space-between;
   background: linear-gradient(to right, #f0f8fc, #fff);
 }
-.modal-header h3 { font-size: 1rem; font-weight: 700; color: var(--navy); }
+.modal-header h3 { font-size: 1rem; font-weight: 700; color: var(--heading); }
 .modal-close {
   display: flex;
   align-items: center;
@@ -803,7 +822,7 @@ textarea { resize: vertical; min-height: 90px; }
   display: block;
   font-size: .95rem;
   font-weight: 700;
-  color: var(--navy);
+  color: var(--heading);
 }
 .batch-stat.accent .batch-stat-val { color: #fff; }
 .batch-units-header {
