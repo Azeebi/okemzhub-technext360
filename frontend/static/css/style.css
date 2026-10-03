@@ -468,14 +468,14 @@ tbody tr:hover td { background: #f8fbfd; }
   text-transform: capitalize;
   letter-spacing: .02em;
 }
-.badge-available { background: var(--success-bg);  color: var(--success-text); }
-.badge-sold      { background: var(--info-bg);      color: var(--info-text); }
-.badge-faulty    { background: var(--danger-bg);    color: var(--danger-text); }
-.badge-pending   { background: var(--warning-bg);   color: var(--warning-text); }
-.badge-approved  { background: var(--success-bg);   color: var(--success-text); }
-.badge-rejected  { background: var(--danger-bg);    color: var(--danger-text); }
-.badge-admin     { background: linear-gradient(135deg,#dbeafe,#bfdbfe); color: #1e3a8a; }
-.badge-staff     { background: #f1f5f9;              color: #475569; }
+.badge-available  { background: var(--success-bg);  color: var(--success-text); }
+.badge-sold       { background: var(--info-bg);      color: var(--info-text); }
+.badge-faulty     { background: var(--danger-bg);    color: var(--danger-text); }
+.badge-pending    { background: var(--warning-bg);   color: var(--warning-text); }
+.badge-approved   { background: var(--success-bg);   color: var(--success-text); }
+.badge-rejected   { background: var(--danger-bg);    color: var(--danger-text); }
+.badge-admin      { background: linear-gradient(135deg,#dbeafe,#bfdbfe); color: #1e3a8a; }
+.badge-staff      { background: #f1f5f9;              color: #475569; }
 
 /* ─── BUTTONS ─────────────────────────────────────────────────────────────── */
 .btn {
@@ -791,6 +791,12 @@ textarea { resize: vertical; min-height: 90px; }
 /* ─── BATCH BADGE + STATS ─────────────────────────────────────────────────── */
 .badge-batch { background: linear-gradient(135deg,#dbeafe,#bfdbfe); color: #1e40af; }
 [data-theme="dark"] .badge-batch { background: #1e3a5a; color: #93c5fd; }
+
+/* Batch reconciliation status: in-progress / balanced / needs a recheck */
+.badge-recheck     { background: var(--danger-bg);  color: var(--danger-text); }
+.badge-balanced    { background: var(--success-bg); color: var(--success-text); }
+.badge-in-progress { background: #f1f5f9; color: #475569; }
+[data-theme="dark"] .badge-in-progress { background: #334155; color: #cbd5e1; }
 
 .batch-summary-grid {
   display: grid;

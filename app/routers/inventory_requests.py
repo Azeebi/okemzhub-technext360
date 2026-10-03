@@ -48,6 +48,7 @@ async def submit_request(
         serial_number=payload.serial_number,
         fault_description=payload.fault_description,
         requested_by_user_id=current_user.id,
+        stock_batch_id=payload.stock_batch_id,
     )
     db.add(req)
     db.commit()
@@ -78,14 +79,19 @@ async def review_request(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="A unit with this serial number already exists in inventory",
             )
-        # Approval creates the actual inventory item
+        # Approval creates the actual inventory item, straight into Available
+        # stock. If no business is chosen, default to the requester's business.
+        requester = db.get(User, req.requested_by_user_id)
+        business_id = payload.business_id or (requester.business_id if requester else None)
         db.add(InventoryItem(
             product_id=req.product_id,
             serial_number=req.serial_number,
             fault_description=req.fault_description,
             status=ItemStatus.available,
             cost_price=payload.cost_price,
-            stock_batch_id=payload.stock_batch_id,
+            selling_price=payload.selling_price,
+            stock_batch_id=payload.stock_batch_id or req.stock_batch_id,
+            business_id=business_id,
         ))
     else:
         req.rejection_reason = payload.rejection_reason

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 if TYPE_CHECKING:
+    from app.models.business import Business
     from app.models.product import Product
     from app.models.sale import Sale
     from app.models.stock_batch import StockBatch
@@ -38,8 +39,17 @@ class InventoryItem(Base):
         ForeignKey("stock_batches.id"), nullable=True, index=True
     )
     cost_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
+    # Suggested resale price set by the boss on approval. Visible to staff —
+    # distinct from cost_price (admin-only) and from the final price typed
+    # in at the point of sale, which may differ after negotiation.
+    selling_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
+    # Which business this unit belongs to (shared pool, labelled per store)
+    business_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("businesses.id"), nullable=True, index=True
+    )
 
     product: Mapped["Product"] = relationship("Product", back_populates="inventory_items")
+    business: Mapped[Optional["Business"]] = relationship("Business")
     sale: Mapped[Optional["Sale"]] = relationship(
         "Sale", back_populates="inventory_item", uselist=False
     )
@@ -60,3 +70,7 @@ class InventoryItem(Base):
     @property
     def date_sold(self) -> Optional[datetime]:
         return self.sale.date_sold if self.sale else None
+
+    @property
+    def business_name(self) -> Optional[str]:
+        return self.business.name if self.business else None
