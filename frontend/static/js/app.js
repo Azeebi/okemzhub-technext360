@@ -7,6 +7,7 @@ let allInventory         = [];
 let allInventoryRequests = [];
 let allUsers             = [];
 let allBatches           = [];
+let allBusinesses        = [];
 let dashFilter           = { type: 'all', start: null, end: null };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -146,6 +147,7 @@ function setupActionButtons() {
   document.getElementById('btn-refresh-logs')?.addEventListener('click', loadActivityLogs);
   document.getElementById('dark-toggle-btn')?.addEventListener('click', toggleDarkMode);
   document.getElementById('filter-inv-status')?.addEventListener('change', loadInventory);
+  document.getElementById('filter-inv-business')?.addEventListener('change', loadInventory);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -363,22 +365,43 @@ async function loadProducts() {
   getEl('products-table').innerHTML = '<div class="loading">Loading products</div>';
   try {
     allProducts = await API.get('/products/');
+    await getBusinesses();
+    // Available units per product, split by business, so admin can see how
+    // many of each model currently belong to each store.
+    const inv = await API.get('/inventory/?item_status=available').catch(() => []);
+    const stockMap = {};   // productId -> { businessId|'none': count }
+    inv.forEach(i => {
+      const key = i.business_id ?? 'none';
+      (stockMap[i.product_id] ??= {})[key] = (stockMap[i.product_id]?.[key] ?? 0) + 1;
+    });
     const isAdmin = currentUser?.role === 'admin';
     const rows = allProducts.map(p => `
       <tr>
         <td><strong>${p.brand}</strong></td>
         <td>${p.model_name}</td>
         <td><strong>${fmtMoney(p.base_price)}</strong></td>
+        <td>${stockByBusinessCell(stockMap[p.id])}</td>
         <td class="text-muted text-sm" style="max-width:260px;white-space:pre-wrap">${p.specifications ?? '\u2014'}</td>
         ${isAdmin ? `<td><div class="flex gap-1">
           <button class="btn-icon" onclick="showEditProductModal(${p.id})" title="Edit">\u270f\ufe0f</button>
           <button class="btn-icon icon-danger" onclick="deleteProduct(${p.id})" title="Delete">\ud83d\uddd1</button>
         </div></td>` : ''}
-      </tr>`).join('') || emptyRow(isAdmin ? 5 : 4, 'No products yet.');
+      </tr>`).join('') || emptyRow(isAdmin ? 6 : 5, 'No products yet.');
     getEl('products-table').innerHTML = `<table>
-      <thead><tr><th>Brand</th><th>Model</th><th>Base Price</th><th>Specifications</th>${isAdmin ? '<th>Actions</th>' : ''}</tr></thead>
+      <thead><tr><th>Brand</th><th>Model</th><th>Base Price</th><th>In Stock</th><th>Specifications</th>${isAdmin ? '<th>Actions</th>' : ''}</tr></thead>
       <tbody>${rows}</tbody></table>`;
   } catch (err) { toast('Failed to load products: ' + err.message, 'error'); }
+}
+
+// Render per-business available counts for a product as small badges.
+function stockByBusinessCell(counts) {
+  if (!counts) return '<span class="text-muted">0</span>';
+  const parts = [];
+  allBusinesses.forEach(b => {
+    if (counts[b.id]) parts.push(`<span class="badge badge-staff">${escHtml(b.name)}: ${counts[b.id]}</span>`);
+  });
+  if (counts['none']) parts.push(`<span class="badge">Unassigned: ${counts['none']}</span>`);
+  return parts.length ? `<div class="flex gap-1" style="flex-wrap:wrap">${parts.join('')}</div>` : '<span class="text-muted">0</span>';
 }
 
 function productFormHTML(p = {}) {
@@ -428,6 +451,36 @@ async function deleteProduct(id) {
 // ═══════════════════════════════════════════════════════════════════════════
 // INVENTORY  (admin direct-add; staff use Stock Requests)
 // ═══════════════════════════════════════════════════════════════════════════
+// Load and cache the businesses used to label/filter shared stock.
+async function getBusinesses() {
+  if (!allBusinesses.length) {
+    allBusinesses = await API.get('/businesses/').catch(() => []);
+  }
+  return allBusinesses;
+}
+
+// <option> list of businesses; selectedId pre-selects, includeAny adds a blank.
+function businessOptions(selectedId = null, blankLabel = '— Unassigned —') {
+  return `<option value="">${blankLabel}</option>` + allBusinesses.map(b =>
+    `<option value="${b.id}" ${b.id === selectedId ? 'selected' : ''}>${escHtml(b.name)}</option>`
+  ).join('');
+}
+
+function businessBadge(id) {
+  const b = allBusinesses.find(x => x.id === id);
+  if (!b) return '<span class="text-muted">\u2014</span>';
+  return `<span class="badge badge-staff">${escHtml(b.name)}</span>`;
+}
+
+// Fill the inventory business filter dropdown once (keeps current selection).
+function populateBusinessFilter() {
+  const sel = getEl('filter-inv-business');
+  if (!sel || sel.options.length > 1) return;
+  sel.insertAdjacentHTML('beforeend', allBusinesses.map(b =>
+    `<option value="${b.id}">${escHtml(b.name)}</option>`
+  ).join(''));
+}
+
 // Shared "who sold it" cell — shows the seller (name + store) for units that are
 // no longer available, so both sisters can see who picked a sold unit. No prices.
 function soldByCell(i) {
@@ -442,22 +495,30 @@ function soldByCell(i) {
 async function loadInventory() {
   getEl('inventory-table').innerHTML = '<div class="loading">Loading inventory</div>';
   const sf      = val('filter-inv-status');
+  const bf      = val('filter-inv-business');
   const isAdmin = currentUser?.role === 'admin';
   try {
-    allInventory = await API.get('/inventory/' + (sf ? `?item_status=${sf}` : ''));
+    await getBusinesses();
+    populateBusinessFilter();
+    const qs = new URLSearchParams();
+    if (sf) qs.set('item_status', sf);
+    if (bf) qs.set('business_id', bf);
+    allInventory = await API.get('/inventory/' + (qs.toString() ? `?${qs}` : ''));
     if (isAdmin && !allBatches.length) allBatches = await API.get('/stock-batches/').catch(() => []);
     // oldest first so FIFO order is visible
     allInventory.sort((a, b) => new Date(a.date_added) - new Date(b.date_added));
     const productMap = Object.fromEntries(allProducts.map(p => [p.id, `${p.brand} ${p.model_name}`]));
-    const cols = isAdmin ? 9 : 7;
+    const cols = isAdmin ? 11 : 9;
     const rows = allInventory.map(i => `
       <tr>
         <td class="font-mono text-sm">${escHtml(i.serial_number)}</td>
         <td>${productMap[i.product_id] ?? `Product #${i.product_id}`}</td>
+        <td>${businessBadge(i.business_id)}</td>
         ${isAdmin ? `<td>${batchBadge(i.stock_batch_id)}</td>` : ''}
         <td>${badge(i.status)}</td>
-        <td class="text-sm">${soldByCell(i)}</td>
+        <td class="text-sm">${i.selling_price ? `<strong>${fmtMoney(i.selling_price)}</strong>` : '<span class="text-muted">\u2014</span>'}</td>
         ${isAdmin ? `<td class="text-sm">${i.cost_price ? fmtMoney(i.cost_price) : '<span class="text-muted">\u2014</span>'}</td>` : ''}
+        <td class="text-sm">${soldByCell(i)}</td>
         <td class="text-muted text-sm" style="max-width:180px">${i.fault_description ? escHtml(i.fault_description) : '\u2014'}</td>
         <td class="text-muted text-sm">${fmtDate(i.date_added)}</td>
         <td><div class="flex gap-1">
@@ -465,9 +526,10 @@ async function loadInventory() {
           ${isAdmin ? `<button class="btn-icon icon-danger" onclick="deleteInventoryItem(${i.id})" title="Delete">\ud83d\uddd1</button>` : ''}
         </div></td>
       </tr>`).join('') || emptyRow(cols);
-    const ah = isAdmin ? '<th>Batch</th><th>Cost \u20a6</th>' : '';
+    const batchTh = isAdmin ? '<th>Batch</th>' : '';
+    const costTh  = isAdmin ? '<th>Cost \u20a6</th>' : '';
     getEl('inventory-table').innerHTML = `<table>
-      <thead><tr><th>Serial #</th><th>Product</th>${ah}<th>Status</th><th>Sold By</th><th>Fault Note</th><th>Date Added</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Serial #</th><th>Product</th><th>Business</th>${batchTh}<th>Status</th><th>Price \u20a6</th>${costTh}<th>Sold By</th><th>Fault Note</th><th>Date Added</th><th>Actions</th></tr></thead>
       <tbody>${rows}</tbody></table>`;
   } catch (err) { toast('Failed to load inventory: ' + err.message, 'error'); }
 }
@@ -476,6 +538,7 @@ async function showAddInventoryModal() {
   if (!allProducts.length) allProducts = await API.get('/products/').catch(() => []);
   if (!allProducts.length) { toast('Add at least one product first.', 'error'); return; }
   allBatches = await API.get('/stock-batches/').catch(() => []);
+  await getBusinesses();
   const productOpts = allProducts.map(p => `<option value="${p.id}">${p.brand} ${p.model_name}</option>`).join('');
   const batchOpts = `<option value="">— No batch —</option>` + allBatches.map(b =>
     `<option value="${b.id}">${escHtml(b.label)}</option>`
@@ -484,12 +547,16 @@ async function showAddInventoryModal() {
     <div class="form-group"><label>Product</label><select id="f-product">${productOpts}</select></div>
     <div class="form-group"><label>Serial Number</label>
       <input id="f-serial" type="text" placeholder="e.g. C02XK1JHJGH7"></div>
+    <div class="form-group"><label>Business</label>
+      <select id="f-business">${businessOptions(currentUser?.business?.id)}</select></div>
     <div class="form-row">
       <div class="form-group"><label>Stock Batch <span class="text-muted">(optional)</span></label>
         <select id="f-batch">${batchOpts}</select></div>
       <div class="form-group"><label>Cost Price ₦ <span class="text-muted">(optional)</span></label>
         <input id="f-cost" type="number" step="0.01" min="0" placeholder="0.00"></div>
     </div>
+    <div class="form-group"><label>Selling Price ₦ <span class="text-muted">(optional, shown to staff)</span></label>
+      <input id="f-selling" type="number" step="0.01" min="0" placeholder="0.00"></div>
     <div class="form-group"><label>Status</label>
       <select id="f-status" onchange="toggleFaultField()">
         <option value="available">Available</option>
@@ -505,6 +572,8 @@ async function showAddInventoryModal() {
         status, fault_description: status === 'faulty' ? val('f-fault') : null,
         stock_batch_id: int('f-batch') || null,
         cost_price: flt('f-cost') || null,
+        selling_price: flt('f-selling') || null,
+        business_id: int('f-business') || null,
       });
       toast('Unit added', 'success'); closeModal(); loadInventory();
     } catch (err) { toast('Error: ' + err.message, 'error'); }
@@ -519,18 +588,23 @@ async function showEditInventoryModal(id) {
   const item    = allInventory.find(x => x.id === id); if (!item) return;
   const isAdmin = currentUser?.role === 'admin';
   if (isAdmin) allBatches = await API.get('/stock-batches/').catch(() => []);
+  await getBusinesses();
   const batchOpts = isAdmin
     ? `<option value="">\u2014 No batch \u2014</option>` + allBatches.map(b =>
         `<option value="${b.id}" ${b.id === item.stock_batch_id ? 'selected' : ''}>${escHtml(b.label)}</option>`
       ).join('')
     : '';
   const adminFields = isAdmin ? `
+    <div class="form-group"><label>Business</label>
+      <select id="f-business">${businessOptions(item.business_id)}</select></div>
     <div class="form-row">
       <div class="form-group"><label>Stock Batch</label>
         <select id="f-batch">${batchOpts}</select></div>
-      <div class="form-group"><label>Cost Price \u20a6</label>
+      <div class="form-group"><label>Cost Price \u20a6 <span class="text-muted">(admin only)</span></label>
         <input id="f-cost" type="number" step="0.01" min="0" value="${item.cost_price ?? ''}"></div>
-    </div>` : '';
+    </div>
+    <div class="form-group"><label>Selling Price \u20a6 <span class="text-muted">(shown to staff)</span></label>
+      <input id="f-selling" type="number" step="0.01" min="0" value="${item.selling_price ?? ''}"></div>` : '';
   openModal(`Update Unit \u2014 ${escHtml(item.serial_number)}`, `
     <div class="form-group"><label>Status</label>
       <select id="f-status" onchange="toggleFaultField()">
@@ -549,6 +623,8 @@ async function showEditInventoryModal(id) {
       if (isAdmin) {
         payload.stock_batch_id = int('f-batch') || null;
         payload.cost_price     = flt('f-cost') || null;
+        payload.selling_price  = flt('f-selling') || null;
+        payload.business_id    = int('f-business') || null;
       }
       await API.patch(`/inventory/${id}`, payload);
       toast('Unit updated', 'success'); closeModal(); loadInventory();
@@ -571,12 +647,14 @@ async function loadStockRequests() {
     allInventoryRequests = await API.get('/inventory-requests/');
     const isAdmin = currentUser?.role === 'admin';
     if (!allProducts.length) allProducts = await API.get('/products/').catch(() => []);
+    if (!allBatches.length) allBatches = await API.get('/stock-batches/').catch(() => []);
 
     const rows = allInventoryRequests.map(r => `
       <tr>
         <td class="font-mono text-xs text-muted">#${r.id}</td>
         <td>${r.product ? `${r.product.brand} ${r.product.model_name}` : `Product #${r.product_id}`}</td>
         <td class="font-mono text-sm">${r.serial_number}</td>
+        <td>${batchBadge(r.stock_batch_id)}</td>
         <td class="text-sm">${r.requested_by?.name ?? `User #${r.requested_by_user_id}`}</td>
         <td>${badge(r.status)}</td>
         <td class="text-muted text-sm" style="max-width:180px">${r.rejection_reason ?? '\u2014'}</td>
@@ -586,10 +664,10 @@ async function loadStockRequests() {
             <button class="btn btn-success btn-xs" onclick="reviewStockRequest(${r.id},'approved')">\u2713 Approve</button>
             <button class="btn btn-danger  btn-xs" onclick="reviewStockRequest(${r.id},'rejected')">\u2717 Reject</button>
           </div>` : '<span class="text-muted text-xs">\u2014</span>'}</td>
-      </tr>`).join('') || emptyRow(8, 'No stock requests yet.');
+      </tr>`).join('') || emptyRow(9, 'No stock requests yet.');
 
     getEl('stock-requests-table').innerHTML = `<table>
-      <thead><tr><th>#</th><th>Product</th><th>Serial #</th><th>Submitted By</th><th>Status</th><th>Rejection Reason</th><th>Date</th><th>Actions</th></tr></thead>
+      <thead><tr><th>#</th><th>Product</th><th>Serial #</th><th>Batch</th><th>Submitted By</th><th>Status</th><th>Rejection Reason</th><th>Date</th><th>Actions</th></tr></thead>
       <tbody>${rows}</tbody></table>`;
     updatePendingBadge();
   } catch (err) { toast('Failed to load requests: ' + err.message, 'error'); }
@@ -598,21 +676,33 @@ async function loadStockRequests() {
 async function showSubmitStockRequestModal() {
   if (!allProducts.length) allProducts = await API.get('/products/').catch(() => []);
   if (!allProducts.length) { toast('No products in catalog. Ask admin to add products first.', 'error'); return; }
+  allBatches = await API.get('/stock-batches/').catch(() => []);
+  if (!allBatches.length) { toast('No stock batches yet. Ask a boss to register the incoming stock first.', 'error'); return; }
   const opts = allProducts.map(p => `<option value="${p.id}">${p.brand} ${p.model_name}</option>`).join('');
+  const batchOpts = allBatches.map(b =>
+    `<option value="${b.id}">${escHtml(b.label)} (${b.remaining_count > 0 ? `${b.remaining_count} remaining` : 'fully registered'})</option>`
+  ).join('');
   openModal('Submit Stock Request', `
-    <p class="form-hint" style="margin-bottom:1rem">Your request will be reviewed by the admin before the unit appears in inventory.</p>
-    <div class="form-group"><label>Product</label><select id="f-product">${opts}</select></div>
+    <p class="form-hint" style="margin-bottom:1rem">Your request will be reviewed by a boss before the unit appears in inventory.</p>
+    <div class="form-group"><label>Stock Batch</label><select id="f-batch">${batchOpts}</select>
+      <p class="form-hint">Which delivery this unit belongs to.</p></div>
+    <div class="form-group"><label>Product (Brand)</label><select id="f-product">${opts}</select></div>
     <div class="form-group"><label>Serial Number</label>
       <input id="f-serial" type="text" placeholder="e.g. C02XK1JHJGH7"></div>
     <div class="form-group"><label>Condition Notes <span class="text-muted">(optional)</span></label>
       <textarea id="f-fault" placeholder="Any notes about the unit\u2019s condition\u2026"></textarea></div>`,
   async () => {
     try {
+      const batchId = int('f-batch');
       await API.post('/inventory-requests/', {
         product_id: int('f-product'), serial_number: val('f-serial'),
+        stock_batch_id: batchId,
         fault_description: val('f-fault').trim() || null,
       });
-      toast('Request submitted \u2014 awaiting admin approval', 'success');
+      const updated = await API.get('/stock-batches/').catch(() => []);
+      const b = updated.find(x => x.id === batchId);
+      const remainingMsg = b ? (b.remaining_count > 0 ? ` \u2014 ${b.remaining_count} unit${b.remaining_count !== 1 ? 's' : ''} remaining for this batch` : ' \u2014 batch fully registered') : '';
+      toast(`Request submitted \u2014 awaiting approval${remainingMsg}`, 'success');
       closeModal(); loadStockRequests();
     } catch (err) { toast('Error: ' + err.message, 'error'); }
   }, 'Submit Request');
@@ -635,27 +725,38 @@ async function reviewStockRequest(id, action) {
     }, 'Reject', 'btn-danger');
   } else {
     allBatches = await API.get('/stock-batches/').catch(() => []);
+    await getBusinesses();
+    const batch = allBatches.find(b => b.id === req?.stock_batch_id);
     const batchOpts = `<option value="">— No batch —</option>` + allBatches.map(b =>
-      `<option value="${b.id}">${escHtml(b.label)}</option>`
+      `<option value="${b.id}" ${b.id === req?.stock_batch_id ? 'selected' : ''}>${escHtml(b.label)}</option>`
     ).join('');
+    const remainingHint = batch
+      ? ` This batch has ${batch.remaining_count > 0 ? `${batch.remaining_count} unit${batch.remaining_count !== 1 ? 's' : ''} remaining` : 'now had every expected unit registered'} out of ${batch.expected_unit_count} expected.`
+      : '';
     openModal('Approve Stock Request', `
       <p class="form-hint" style="margin-bottom:1rem">
-        Unit <strong>${escHtml(req?.serial_number ?? '#' + id)}</strong> will be added to inventory as <strong>Available</strong>.
+        Unit <strong>${escHtml(req?.serial_number ?? '#' + id)}</strong> will be added to inventory as <strong>Available</strong>.${remainingHint}
       </p>
+      <div class="form-group"><label>Business</label>
+        <select id="f-business">${businessOptions(null, "— Requester's business —")}</select></div>
       <div class="form-row">
-        <div class="form-group"><label>Assign to Batch <span class="text-muted">(optional)</span></label>
+        <div class="form-group"><label>Batch <span class="text-muted">(override, optional)</span></label>
           <select id="f-batch">${batchOpts}</select></div>
-        <div class="form-group"><label>Cost Price ₦ <span class="text-muted">(optional)</span></label>
+        <div class="form-group"><label>Cost Price ₦ <span class="text-muted">(admin only, optional)</span></label>
           <input id="f-cost" type="number" step="0.01" min="0" placeholder="0.00"></div>
-      </div>`,
+      </div>
+      <div class="form-group"><label>Selling Price ₦ <span class="text-muted">(shown to staff)</span></label>
+        <input id="f-selling" type="number" step="0.01" min="0" value="${req?.product?.base_price ?? ''}"></div>`,
     async () => {
       try {
         await API.patch(`/inventory-requests/${id}/review`, {
           status: 'approved',
           stock_batch_id: int('f-batch') || null,
           cost_price: flt('f-cost') || null,
+          selling_price: flt('f-selling') || null,
+          business_id: int('f-business') || null,
         });
-        toast('Approved — unit added to inventory ✓', 'success');
+        toast('Approved — unit added to Available stock ✓', 'success');
         closeModal(); loadStockRequests(); loadInventory();
       } catch (err) { toast('Error: ' + err.message, 'error'); }
     }, 'Approve', 'btn-success');
@@ -699,16 +800,25 @@ async function loadSales() {
   } catch (err) { toast('Failed to load sales: ' + err.message, 'error'); }
 }
 
+function fillSalePrice() {
+  const opt = getEl('f-item')?.selectedOptions?.[0];
+  const price = opt?.dataset?.price;
+  if (price) getEl('f-price').value = price;
+}
+
 async function showRecordSaleModal() {
   const available = await API.get('/inventory/?item_status=available').catch(() => []);
   if (!available.length) { toast('No units currently available in stock.', 'error'); return; }
   if (!allProducts.length) allProducts = await API.get('/products/').catch(() => []);
-  const productMap = Object.fromEntries(allProducts.map(p => [p.id, `${p.brand} ${p.model_name}`]));
-  const opts = available.map(i =>
-    `<option value="${i.id}">${productMap[i.product_id] ?? 'Product #' + i.product_id}  \u2014  ${i.serial_number}</option>`
-  ).join('');
+  const productMap = Object.fromEntries(allProducts.map(p => [p.id, p]));
+  const opts = available.map(i => {
+    const product = productMap[i.product_id];
+    const price = i.selling_price ?? product?.base_price ?? '';
+    return `<option value="${i.id}" data-price="${price}">${product ? `${product.brand} ${product.model_name}` : 'Product #' + i.product_id}  \u2014  ${i.serial_number}</option>`;
+  }).join('');
   openModal('Record Sale', `
-    <div class="form-group"><label>Select Unit to Sell</label><select id="f-item">${opts}</select></div>
+    <div class="form-group"><label>Select Unit to Sell</label>
+      <select id="f-item" onchange="fillSalePrice()">${opts}</select></div>
     <div class="form-group"><label>Selling Price (\u20a6)</label>
       <input id="f-price" type="number" step="0.01" min="0" placeholder="0.00"></div>
     <p class="form-hint">The unit will automatically be marked as <strong>Sold</strong>.</p>`,
@@ -719,6 +829,7 @@ async function showRecordSaleModal() {
       closeModal(); loadSales(); loadInventory();
     } catch (err) { toast('Error: ' + err.message, 'error'); }
   }, 'Record Sale', 'btn-success');
+  fillSalePrice();
 }
 
 async function reverseSale(id) {
@@ -909,6 +1020,19 @@ const batchBadge = id => {
   return b ? `<span class="badge badge-batch">${escHtml(b.label)}</span>` : `<span class="text-muted text-xs">#${id}</span>`;
 };
 
+// Reconciliation state for a batch: still filling up, balanced, or needs a
+// boss recheck because the registered count doesn't match what was declared.
+function batchStatusBadge(b) {
+  if (b.needs_recheck) {
+    const diff = b.unit_count - b.expected_unit_count;
+    return `<span class="badge badge-recheck">Recheck: ${diff > 0 ? `${diff} over` : `${-diff} short`}</span>`;
+  }
+  if (b.remaining_count === 0) {
+    return `<span class="badge badge-balanced">Fully registered \u2713</span>`;
+  }
+  return `<span class="badge badge-in-progress">${b.remaining_count} remaining</span>`;
+}
+
 async function loadStockBatches() {
   getEl('stock-batches-table').innerHTML = '<div class="loading">Loading batches</div>';
   try {
@@ -917,7 +1041,8 @@ async function loadStockBatches() {
       <tr>
         <td><strong>${escHtml(b.label)}</strong></td>
         <td class="text-sm text-muted">${fmtDate(b.date_received)}</td>
-        <td class="text-sm">${b.unit_count} unit${b.unit_count !== 1 ? 's' : ''}</td>
+        <td class="text-sm">${b.unit_count} / ${b.expected_unit_count} unit${b.expected_unit_count !== 1 ? 's' : ''}</td>
+        <td>${batchStatusBadge(b)}</td>
         <td><strong>${fmtMoney(b.total_unit_cost)}</strong></td>
         <td class="text-muted text-sm">${fmtMoney(b.shipping_fee)}</td>
         <td class="text-muted text-sm">${fmtMoney(b.other_expenses)}</td>
@@ -927,10 +1052,10 @@ async function loadStockBatches() {
           <button class="btn-icon" onclick="showEditBatchModal(${b.id})" title="Edit">\u270f\ufe0f</button>
           <button class="btn-icon icon-danger" onclick="deleteBatch(${b.id})" title="Delete">\ud83d\uddd1</button>
         </div></td>
-      </tr>`).join('') || emptyRow(8, 'No stock batches yet. Create one to start tracking received stock.');
+      </tr>`).join('') || emptyRow(9, 'No stock batches yet. Create one to start tracking received stock.');
     getEl('stock-batches-table').innerHTML = `<table>
       <thead><tr>
-        <th>Batch Label</th><th>Date Received</th><th>Units</th>
+        <th>Batch Label</th><th>Date Received</th><th>Units</th><th>Status</th>
         <th>Unit Cost Total</th><th>Shipping Fee</th><th>Other Expenses</th>
         <th>Total Landed Cost</th><th>Actions</th>
       </tr></thead>
@@ -942,10 +1067,15 @@ function batchFormHTML(b = {}) {
   const dateVal = b.date_received ? String(b.date_received).split('T')[0] : '';
   return `
     <div class="form-group"><label>Batch Label</label>
-      <input id="f-label" type="text" placeholder="e.g. January 2026 Shipment" value="${escHtml(b.label ?? '')}">
+      <input id="f-label" type="text" placeholder="e.g. Stock from XYZ, 1 Oct" value="${escHtml(b.label ?? '')}">
       <p class="form-hint">A descriptive name so you can identify this stock batch easily.</p></div>
-    <div class="form-group"><label>Date Received</label>
-      <input id="f-date" type="date" value="${dateVal}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Date Received</label>
+        <input id="f-date" type="date" value="${dateVal}"></div>
+      <div class="form-group"><label>Unit Count</label>
+        <input id="f-expected" type="number" step="1" min="0" value="${b.expected_unit_count ?? ''}" placeholder="e.g. 25">
+        <p class="form-hint">How many units you're expecting. Staff registrations get reconciled against this.</p></div>
+    </div>
     <div class="form-row">
       <div class="form-group"><label>Shipping Fee \u20a6</label>
         <input id="f-shipping" type="number" step="0.01" min="0" value="${b.shipping_fee ?? '0'}"></div>
@@ -962,6 +1092,7 @@ function showCreateBatchModal() {
     try {
       await API.post('/stock-batches/', {
         label: val('f-label'), date_received: val('f-date'),
+        expected_unit_count: int('f-expected'),
         shipping_fee: flt('f-shipping'), other_expenses: flt('f-other'),
         notes: val('f-notes').trim() || null,
       });
@@ -976,6 +1107,7 @@ function showEditBatchModal(id) {
     try {
       await API.put(`/stock-batches/${id}`, {
         label: val('f-label'), date_received: val('f-date'),
+        expected_unit_count: int('f-expected'),
         shipping_fee: flt('f-shipping'), other_expenses: flt('f-other'),
         notes: val('f-notes').trim() || null,
       });
@@ -994,14 +1126,17 @@ async function showBatchDetailModal(id) {
         <td class="font-mono text-sm">${escHtml(i.serial_number)}</td>
         <td class="text-sm">${productMap[i.product_id] ?? 'Product #' + i.product_id}</td>
         <td class="text-sm">${i.cost_price ? `<strong>${fmtMoney(i.cost_price)}</strong>` : '<span class="text-muted">\u2014</span>'}</td>
+        <td class="text-sm">${i.selling_price ? fmtMoney(i.selling_price) : '<span class="text-muted">\u2014</span>'}</td>
         <td>${badge(i.status)}</td>
         <td class="text-muted text-sm">${fmtDate(i.date_added)}</td>
-      </tr>`).join('') || emptyRow(5, 'No units assigned to this batch yet.');
+      </tr>`).join('') || emptyRow(6, 'No units assigned to this batch yet.');
     document.querySelector('.modal')?.classList.add('modal-lg');
     openModal(`Batch: ${escHtml(b.label)}`, `
       <div class="batch-summary-grid">
         <div class="batch-stat"><span class="batch-stat-label">Date Received</span><span class="batch-stat-val">${fmtDate(b.date_received)}</span></div>
-        <div class="batch-stat"><span class="batch-stat-label">Units in Batch</span><span class="batch-stat-val">${b.unit_count}</span></div>
+        <div class="batch-stat"><span class="batch-stat-label">Units Expected</span><span class="batch-stat-val">${b.expected_unit_count}</span></div>
+        <div class="batch-stat"><span class="batch-stat-label">Units Registered</span><span class="batch-stat-val">${b.unit_count}${b.pending_count ? ` (+${b.pending_count} pending)` : ''}</span></div>
+        <div class="batch-stat"><span class="batch-stat-label">Reconciliation</span><span class="batch-stat-val">${batchStatusBadge(b)}</span></div>
         <div class="batch-stat"><span class="batch-stat-label">Total Unit Cost</span><span class="batch-stat-val">${fmtMoney(b.total_unit_cost)}</span></div>
         <div class="batch-stat"><span class="batch-stat-label">Shipping Fee</span><span class="batch-stat-val">${fmtMoney(b.shipping_fee)}</span></div>
         <div class="batch-stat"><span class="batch-stat-label">Other Expenses</span><span class="batch-stat-val">${fmtMoney(b.other_expenses)}</span></div>
@@ -1010,7 +1145,7 @@ async function showBatchDetailModal(id) {
       ${b.notes ? `<p class="form-hint" style="margin-bottom:.9rem">${escHtml(b.notes)}</p>` : ''}
       <p class="batch-units-header">Units in this batch \u2014 oldest first (FIFO order)</p>
       <div class="table-wrap"><table>
-        <thead><tr><th>Serial #</th><th>Product</th><th>Cost Price</th><th>Status</th><th>Date Added</th></tr></thead>
+        <thead><tr><th>Serial #</th><th>Product</th><th>Cost Price</th><th>Selling Price</th><th>Status</th><th>Date Added</th></tr></thead>
         <tbody>${itemRows}</tbody></table></div>`,
     null);
   } catch (err) { toast('Failed to load batch details: ' + err.message, 'error'); }

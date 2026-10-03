@@ -9,6 +9,7 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.product import Product
+    from app.models.stock_batch import StockBatch
     from app.models.user import User
 
 
@@ -26,6 +27,10 @@ class InventoryRequest(Base):
     serial_number: Mapped[str] = mapped_column(String(100), index=True)
     fault_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     requested_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # Which boss-declared stock delivery this unit is being registered against
+    stock_batch_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("stock_batches.id"), nullable=True, index=True
+    )
     status: Mapped[RequestStatus] = mapped_column(
         SAEnum(RequestStatus, name="requeststatus"), default=RequestStatus.pending
     )
@@ -36,3 +41,6 @@ class InventoryRequest(Base):
 
     product: Mapped["Product"] = relationship("Product")
     requested_by: Mapped["User"] = relationship("User")
+    stock_batch: Mapped[Optional["StockBatch"]] = relationship(
+        "StockBatch", back_populates="requests"
+    )

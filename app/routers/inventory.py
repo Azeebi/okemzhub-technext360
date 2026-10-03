@@ -14,6 +14,7 @@ router = APIRouter(prefix="/inventory", tags=["Inventory"])
 # Eager-load the sale + seller + business so the shared "who sold it" fields
 # resolve in one query instead of N+1 lazy loads.
 _load_seller = [
+    selectinload(InventoryItem.business),
     selectinload(InventoryItem.sale).selectinload(Sale.sold_by),
     selectinload(InventoryItem.sale).selectinload(Sale.business),
 ]
@@ -23,15 +24,18 @@ _load_seller = [
 async def list_inventory(
     product_id: Optional[int] = None,
     item_status: Optional[ItemStatus] = None,
+    business_id: Optional[int] = None,
     db: Session = Depends(get_db),
     _: object = Depends(get_current_user),
 ):
-    """List inventory units. Optionally filter by product or status."""
+    """List inventory units. Optionally filter by product, status or business."""
     query = select(InventoryItem).options(*_load_seller)
     if product_id is not None:
         query = query.where(InventoryItem.product_id == product_id)
     if item_status is not None:
         query = query.where(InventoryItem.status == item_status)
+    if business_id is not None:
+        query = query.where(InventoryItem.business_id == business_id)
     return db.execute(query).scalars().all()
 
 

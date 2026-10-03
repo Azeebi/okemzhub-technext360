@@ -12,7 +12,7 @@ from app.models.business import Business
 from app.models.expense import Expense
 from app.models.sale import Sale
 from app.models.user import User
-from app.routers import auth, expenses, inventory, inventory_requests, login_logs, products, sales, stock_batches, users
+from app.routers import auth, businesses, expenses, inventory, inventory_requests, login_logs, products, sales, stock_batches, users
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
@@ -31,8 +31,10 @@ def _migrate_existing_tables() -> None:
 
     pending: dict[str, list[tuple[str, str]]] = {
         "inventory_items": [
-            ("stock_batch_id", "INTEGER REFERENCES stock_batches(id)"),
-            ("cost_price",     "NUMERIC(14,2)"),
+            ("stock_batch_id",  "INTEGER REFERENCES stock_batches(id)"),
+            ("cost_price",      "NUMERIC(14,2)"),
+            ("selling_price",   "NUMERIC(14,2)"),
+            ("business_id",     "INTEGER REFERENCES businesses(id)"),
         ],
         "users": [
             ("business_id", "INTEGER REFERENCES businesses(id)"),
@@ -42,6 +44,12 @@ def _migrate_existing_tables() -> None:
         ],
         "expenses": [
             ("business_id", "INTEGER REFERENCES businesses(id)"),
+        ],
+        "stock_batches": [
+            ("expected_unit_count", "INTEGER DEFAULT 0"),
+        ],
+        "inventory_requests": [
+            ("stock_batch_id", "INTEGER REFERENCES stock_batches(id)"),
         ],
     }
 
@@ -104,6 +112,7 @@ app = FastAPI(
 
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(businesses.router)
 app.include_router(products.router)
 app.include_router(inventory.router)
 app.include_router(inventory_requests.router)
